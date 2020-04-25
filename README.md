@@ -110,6 +110,29 @@ And generates the following variables to be passed along side the query:
 
 ```
 
+### Sorting
+
+Dot notation is supported for sort fields, and will be expanded into an object in the graphQL query.
+
+For example:
+```
+export const PostList = (props) => (
+    <List {...props} sort={{ field: 'user.email', order: 'DESC' }}>
+        ...
+    </List>
+);
+```
+
+Will generate the following graphQL query:
+```
+{
+  limit: 25,
+  offset: 0,
+  order_by: { user: { email: 'desc' } }
+}
+```
+
+
 ## Options
 
 ### Customize the Apollo client
@@ -165,3 +188,66 @@ Pass the introspection options to the `buildApolloProvider` function:
 
 ```js
 buildApolloProvider({ introspection: introspectionOptions });
+```
+
+## Customize fields, variables, responseParser
+
+Using the factories you can customize the behavior of the data provider.
+
+Just change the `buildQuery` property in the options object:
+
+```js
+import buildDataProvider from 'ra-data-hasura-graphql'
+import { buildQueryFactory } from 'ra-data-hasura-graphql/src/buildQuery'
+import buildVariables from 'ra-data-hasura-graphql/src/buildVariables'
+import { buildGqlQuery, buildFields, buildMetaArgs, buildArgs, buildApolloArgs } from 'ra-data-hasura-graphql/src/buildGqlQuery'
+import getResponseParser from 'ra-data-hasura-graphql/src/getResponseParser'
+
+const buildGqlQueryCustom = iR => buildGqlQuery(iR, buildFields, buildMetaArgs, buildArgs, buildApolloArgs)
+const buildQuery = buildQueryFactory(buildVariables, buildGqlQueryCustom, getResponseParser)
+buildDataProvider({...opt, buildQuery})
+```
+
+### Example: Query related entities
+
+```jsx
+import buildDataProvider from 'ra-data-hasura-graphql'
+import { buildQueryFactory } from 'ra-data-hasura-graphql/src/buildQuery'
+import buildVariables from 'ra-data-hasura-graphql/src/buildVariables'
+import { buildGqlQuery, buildFields, buildMetaArgs, buildArgs, buildApolloArgs } from 'ra-data-hasura-graphql/src/buildGqlQuery'
+import getResponseParser from 'ra-data-hasura-graphql/src/getResponseParser'
+import * as gqlTypes from 'graphql-ast-types-browser';
+
+const buildFieldsCustom = type => {
+  let res = buildFields(type)
+  if(type.name === "app") {
+    // here we add additional fields we want to query for apps.
+    // we are using the graphql-ast-types functions which is ast representation for graphql
+    res.push(gqlTypes.field(gqlTypes.name("app_berechtigungs"), null, null, null, gqlTypes.selectionSet([
+      gqlTypes.field(gqlTypes.name("berechtigung_id")),
+      gqlTypes.field(gqlTypes.name("berechtigung"), null, null, null, gqlTypes.selectionSet([
+        gqlTypes.field(gqlTypes.name("name"))
+      ]))
+    ])))
+  }
+  return res
+}
+const buildGqlQueryCustom = iR => buildGqlQuery(iR, buildFieldsCustom, buildMetaArgs, buildArgs, buildApolloArgs)
+const buildQuery = buildQueryFactory(buildVariables, buildGqlQueryCustom, getResponseParser)
+buildDataProvider({buildQuery})
+```
+
+This should add the relation to the GraphQL query and result in a query similar to:
+
+```
+app {
+  id
+  name
+  app_berechtigungs {
+    berechtigung_id
+    berechtigung {
+      name
+    }
+  }
+}
+```
